@@ -1,0 +1,21 @@
+[Unit]
+Description=homelab-ai-watchdog: Proxmox snapshot -> Claude triage -> chat notification
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+# Adjust paths to where you cloned the repo and created the venv.
+WorkingDirectory=/opt/homelab-ai-watchdog
+ExecStart=/opt/homelab-ai-watchdog/.venv/bin/python watchdog.py config.yaml
+# Run as an unprivileged user; the watchdog only needs network access.
+User=aiwatch
+Group=aiwatch
+# Loads secrets if the file exists ("-" makes it optional) — see README step 4.
+EnvironmentFile=-/etc/ai-watchdog.env
+NoNewPrivileges=true
+ProtectSystem=strict
+# "-" tolerates a missing directory so the unit still starts (and the Python
+# error handler can notify) — but create it during install, see README step 4.
+ReadWritePaths=-/opt/homelab-ai-watchdog/state
+PrivateTmp=true

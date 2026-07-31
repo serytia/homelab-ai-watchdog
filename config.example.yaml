@@ -1,0 +1,42 @@
+# homelab-ai-watchdog configuration
+# Copy to config.yaml, fill in, then: chmod 600 config.yaml
+# Secrets can also come from environment variables (they override this file):
+#   ANTHROPIC_API_KEY, PROXMOX_TOKEN_VALUE
+
+proxmox:
+  host: "192.168.1.10"        # Proxmox host or IP
+  port: 8006
+  user: "aiwatch@pve"         # dedicated user with the PVEAuditor role (read-only)
+  token_name: "aiwatch"       # API token ID (Datacenter -> Permissions -> API Tokens)
+  token_value: ""             # or set PROXMOX_TOKEN_VALUE in the environment
+  verify_ssl: false           # false is common for self-signed PVE certs
+
+triage:
+  model: "claude-haiku-4-5"   # cheap eyes: pattern triage every run (~cents/day)
+  deep_model: ""              # optional smart brain, e.g. "claude-opus-5":
+                              # runs a 2nd diagnosis pass only when findings exist
+  api_key: ""                 # prefer ANTHROPIC_API_KEY in the environment
+  notify_min_severity: "warning"   # info | warning | critical
+
+# If the watchdog itself fails (API down, Proxmox unreachable), send the error
+# through the notifiers instead of failing silently.
+notify_on_watchdog_error: true
+
+state_file: "state/last_snapshot.json"
+
+# Enable one or several. Each needs exactly one URL or token pair.
+notifiers:
+  telegram:
+    enabled: false
+    bot_token: ""             # from @BotFather
+    chat_id: ""               # your chat id (message @userinfobot)
+  discord:
+    enabled: false
+    webhook_url: ""           # channel settings -> Integrations -> Webhooks
+  slack:
+    enabled: false
+    webhook_url: ""           # Slack app -> Incoming Webhooks
+  teams:
+    enabled: false
+    workflow_url: ""          # Workflows app webhook URL (see README — classic
+                              # O365 connector webhooks are retired since May 2026)
