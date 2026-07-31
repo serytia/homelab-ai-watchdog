@@ -37,6 +37,9 @@ failure yet" is a classic dying-disk signature.
   proposes commands; *you* run them.
 - **Allowed to stay silent** — if everything is fine it sends nothing. An agent
   that can say "nothing to report" is one you can trust when it does speak.
+- **No alert fatigue** — an *ongoing* issue (that backup still failing) is
+  notified once per `renotify_after_hours` (default 24 h), not on every
+  15-minute tick. We learned this one the hard way.
 - **Cheap, and honestly priced** — a ~10-guest lab snapshotted every 15 min
   through Claude Haiku runs on the order of **$0.30–0.50/day** (the snapshot and
   its previous version ride along on every call). Halve the timer interval to

@@ -20,12 +20,13 @@ FINDINGS_SCHEMA = {
             "items": {
                 "type": "object",
                 "properties": {
+                    "id": {"type": "string"},
                     "severity": {"type": "string", "enum": ["info", "warning", "critical"]},
                     "title": {"type": "string"},
                     "detail": {"type": "string"},
                     "suggested_action": {"type": "string"},
                 },
-                "required": ["severity", "title", "detail", "suggested_action"],
+                "required": ["id", "severity", "title", "detail", "suggested_action"],
                 "additionalProperties": False,
             },
         }
@@ -51,7 +52,12 @@ Do NOT report: normal operation, expected stopped templates/containers, minor fl
 If everything is fine, return an empty findings list. Severity: "critical" = data or \
 availability at risk now; "warning" = needs attention soon; "info" = worth knowing.
 Suggested actions must be a single safe shell command or a one-line manual step, never \
-destructive without saying so."""
+destructive without saying so.
+
+Each finding carries an "id": a short stable kebab-case identifier derived from the \
+UNDERLYING issue, not its wording — e.g. the failing task id ("vzdump-999999-failed"), \
+"apt-update-failures", "rootfs-trending-full-pve". The same ongoing issue MUST produce \
+the same id on every run, so repeated alerts can be deduplicated."""
 
 DEEP_PROMPT = """You are a senior sysadmin. For each finding below from a Proxmox homelab, \
 give a sharper root-cause hypothesis and a concrete fix, using the snapshot as evidence. \

@@ -29,6 +29,11 @@ SEVERITY_RANK = {"info": 0, "warning": 1, "critical": 2}
 # Repeated watchdog errors of the same kind notify at most once per cooldown,
 # so a dead Proxmox host doesn't page you every 15 minutes all night.
 ERROR_COOLDOWN_S = 24 * 3600
+# Same idea for findings: an ongoing issue (failed backup still failed) is
+# notified once per cooldown, not on every timer tick. Configurable via
+# `renotify_after_hours` in config.yaml.
+DEFAULT_RENOTIFY_HOURS = 24
+REPORTED_PRUNE_S = 30 * 24 * 3600
 
 
 def load_config(path):
@@ -74,6 +79,34 @@ def _save_or_log(state_file, snapshot):
 def _error_state_path(state_file):
     p = Path(state_file)
     return p.with_name(p.stem + ".error.json")
+
+
+def _reported_path(state_file):
+    p = Path(state_file)
+    return p.with_name(p.stem + ".reported.json")
+
+
+def load_reported(path):
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
+def save_reported(path, reported):
+    now = time.time()
+    reported = {k: ts for k, ts in reported.items() if now - ts < REPORTED_PRUNE_S}
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(reported), encoding="utf-8")
+    except OSError as exc:
+        log.error("could not save reported-findings state: %s", exc)
+
+
+def finding_key(f):
+    # The model provides a stable id per underlying issue; fall back to the
+    # title for robustness if it ever omits one.
+    return f.get("id") or f.get("title", "untitled")
 
 
 def should_notify_error(path, exc):
@@ -139,15 +172,31 @@ def main():
         _save_or_log(state_file, snapshot)
         return
 
+    # An ongoing issue is notified once per cooldown, not on every timer tick.
+    reported_path = _reported_path(state_file)
+    reported = load_reported(reported_path)
+    renotify_s = float(cfg.get("renotify_after_hours", DEFAULT_RENOTIFY_HOURS)) * 3600
+    now = time.time()
+    fresh = [f for f in to_report if now - reported.get(finding_key(f), 0) >= renotify_s]
+
+    if not fresh:
+        log.info("%d finding(s) present but all notified recently — staying quiet",
+                 len(to_report))
+        _save_or_log(state_file, snapshot)
+        return
+
     source = cfg["proxmox"].get("host", "homelab")
-    text = notifiers.format_report(to_report, source=source)
+    text = notifiers.format_report(fresh, source=source)
     sent = notifiers.dispatch(cfg["notifiers"], text)
     if sent == 0:
-        # Do NOT advance state: the same findings must regenerate next run,
-        # and systemd must see a failed unit instead of a fake success.
+        # Do NOT advance state and do NOT mark findings as reported: the same
+        # findings must regenerate next run, and systemd must see a failed unit.
         log.error("alert NOT delivered — state not advanced, will retry next run")
         sys.exit(1)
 
+    for f in fresh:
+        reported[finding_key(f)] = now
+    save_reported(reported_path, reported)
     _save_or_log(state_file, snapshot)
 
 

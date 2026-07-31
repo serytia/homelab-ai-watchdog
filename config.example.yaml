@@ -22,6 +22,10 @@ triage:
 # through the notifiers instead of failing silently.
 notify_on_watchdog_error: true
 
+# An ongoing issue (a backup still failing) is re-notified at most once per
+# this many hours — not on every 15-minute tick.
+renotify_after_hours: 24
+
 state_file: "state/last_snapshot.json"
 
 # Enable one or several. Each needs exactly one URL or token pair.
