@@ -81,7 +81,7 @@ found something.
 
 | Platform | Setup | Time |
 |---|---|---|
-| **Telegram** | Talk to [@BotFather](https://t.me/BotFather) → `/newbot` → copy the token. Get your chat id from [@userinfobot](https://t.me/userinfobot). | 30 s |
+| **Telegram** | Talk to [@BotFather](https://t.me/BotFather) → `/newbot` → copy the token. Get your chat id from [@userinfobot](https://t.me/userinfobot). Tip: the watchdog only *sends* — in BotFather, restrict who can message your bot so strangers can't talk to it. | 30 s |
 | **Discord** | Channel → Settings → Integrations → Webhooks → New Webhook → copy URL. | 30 s |
 | **Slack** | [api.slack.com/apps](https://api.slack.com/apps) → Create App → Incoming Webhooks → Activate → Add to channel → copy URL. | 2 min |
 | **Teams** | See below — classic webhooks are gone. | 3 min |
