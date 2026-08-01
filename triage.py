@@ -48,7 +48,10 @@ Report ONLY genuine anomalies:
 - meaningful changes since the previous snapshot (task duration doubling, uptime reset = \
 unexpected reboot)
 
-Do NOT report: normal operation, expected stopped templates/containers, minor fluctuations.
+Do NOT report: normal operation, guests already stopped in the previous snapshot, \
+minor fluctuations. But a guest (VM or container) that was RUNNING in the previous \
+snapshot and is now stopped is ALWAYS a finding — never assume an observed stop was \
+expected.
 If everything is fine, return an empty findings list. Severity: "critical" = data or \
 availability at risk now; "warning" = needs attention soon; "info" = worth knowing.
 Suggested actions must be a single safe shell command or a one-line manual step, never \
