@@ -114,14 +114,15 @@ def triage(cfg, snapshot, previous=None):
                                   separators=(",", ":"))
         try:
             deep = _call(client, deep_model, DEEP_PROMPT, deep_payload, max_tokens=3000)
-            if len(deep) == len(findings):
-                findings = [
-                    {**f, "detail": d["detail"], "suggested_action": d["suggested_action"]}
-                    for f, d in zip(findings, deep)
-                ]
-            else:
-                log.warning("deep pass changed finding count (%d -> %d) — ignoring it",
-                            len(findings), len(deep))
+            # Match enrichments by stable id, never by position: a reordered
+            # deep response must not cross-wire details between findings.
+            by_id = {d.get("id"): d for d in deep}
+            findings = [
+                {**f, "detail": by_id[f["id"]]["detail"],
+                 "suggested_action": by_id[f["id"]]["suggested_action"]}
+                if f.get("id") in by_id else f
+                for f in findings
+            ]
         except (TriageError, anthropic.APIError) as exc:
             log.warning("deep pass failed, keeping first-pass findings: %s", exc)
 

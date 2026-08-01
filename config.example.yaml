@@ -26,6 +26,25 @@ notify_on_watchdog_error: true
 # this many hours — not on every 15-minute tick.
 renotify_after_hours: 24
 
+# v2 "hands": reply to the bot to run a SHORT whitelist of reversible actions.
+# Uses a SECOND Proxmox token with a narrow role — never the auditor one:
+#   pveum role add AIWatchOperator -privs "VM.PowerMgmt,VM.Audit"
+#   pveum user add aiact@pve
+#   pveum acl modify /vms/104 -user aiact@pve -role AIWatchOperator
+#   pveum user token add aiact@pve aiact --privsep 0
+responder:
+  enabled: false
+  allowed_vmids: []           # empty = no action commands at all (VMs and LXC)
+  allowed_user_ids: []        # optional: pin commands to these Telegram user ids
+  max_actions_per_hour: 6
+  max_readonly_per_min: 4     # /status and /check are rate-limited too
+  confirm_timeout_s: 60
+  action_user: "aiact@pve"
+  action_token_name: "aiact"
+  action_token_value: ""      # or PROXMOX_ACTION_TOKEN_VALUE in the environment
+# The responder only obeys your PRIVATE chat (never groups), drains any queued
+# messages on restart without executing them, and audits to state/audit.jsonl.
+
 state_file: "state/last_snapshot.json"
 
 # Enable one or several. Each needs exactly one URL or token pair.

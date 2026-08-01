@@ -81,7 +81,7 @@ found something.
 
 | Platform | Setup | Time |
 |---|---|---|
-| **Telegram** | Talk to [@BotFather](https://t.me/BotFather) → `/newbot` → copy the token. Get your chat id from [@userinfobot](https://t.me/userinfobot). Tip: the watchdog only *sends* — in BotFather, restrict who can message your bot so strangers can't talk to it. | 30 s |
+| **Telegram** | Talk to [@BotFather](https://t.me/BotFather) → `/newbot` → copy the token. Get your chat id from [@userinfobot](https://t.me/userinfobot). Tip: in BotFather, keep **Group Privacy ON** and don't add the bot to groups — the watchdog only needs your private chat. | 30 s |
 | **Discord** | Channel → Settings → Integrations → Webhooks → New Webhook → copy URL. | 30 s |
 | **Slack** | [api.slack.com/apps](https://api.slack.com/apps) → Create App → Incoming Webhooks → Activate → Add to channel → copy URL. | 2 min |
 | **Teams** | See below — classic webhooks are gone. | 3 min |
@@ -126,13 +126,48 @@ Cron works too: `*/15 * * * * cd /opt/homelab-ai-watchdog && .venv/bin/python wa
 ## Guardrails (read before deploying)
 
 1. **Read-only token.** PVEAuditor. The agent proposes, you dispose.
-2. **It messages, it never executes.** There is no code path from a finding to a
-   shell command.
+2. **Findings never trigger actions.** The watchdog only messages you; there is
+   no code path from a finding to a command. The optional v2 responder executes
+   exclusively *your* whitelisted, individually confirmed orders.
 3. **Cap the API spend** in the Anthropic console.
 4. **Your infra snapshot goes to an API.** Node names, VM names, storage usage,
    task logs — no passwords, no file contents, but metadata. If that crosses a
    line for you, the architecture points the same script at a local model
    (see Roadmap).
+
+## v2 — giving it hands (optional, read this twice)
+
+Reply to the bot to run a **short whitelist of reversible actions**:
+`/status`, `/check` (read-only, rate-limited), `/vmstart <vmid>`,
+`/vmshutdown <vmid>` (VMs and LXC). Each state-changing action is armed with a
+one-time code — reply `/confirm <code>` within 60 s — rate-limited, and written
+to `state/audit.jsonl` (with who confirmed) *before* the result is announced.
+
+The security model is the feature:
+- **Second token, narrow role.** The watchdog's auditor token stays read-only.
+  Actions use a dedicated user with `VM.PowerMgmt` only, scoped per-guest by ACL:
+  ```bash
+  pveum role add AIWatchOperator -privs "VM.PowerMgmt,VM.Audit"
+  pveum user add aiact@pve
+  pveum acl modify /vms/104 -user aiact@pve -role AIWatchOperator
+  pveum user token add aiact@pve aiact --privsep 0
+  ```
+- **Hardcoded catalog.** No configurable command templates — nothing to inject.
+  (`/vmstart`, not `/start`: Telegram deep links can make you send `/start <payload>`.)
+- **Whitelist first.** `allowed_vmids` empty (the default) = zero actions possible.
+- **Only you, only in private.** Commands are obeyed solely in your private chat
+  (group chats are refused even with the right id; optionally pin
+  `allowed_user_ids`). Unauthorized attempts are counted and reported at most
+  once per hour — their content is never echoed back to you.
+- **No replays, no clock tricks.** On restart the responder drains and discards
+  every message queued while it was down (independent of the system clock), so
+  an outage never turns into a surprise shutdown.
+
+Enable it in `config.yaml` (`responder:` section), then:
+```bash
+sudo cp systemd/ai-watchdog-responder.service /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now ai-watchdog-responder
+```
 
 ## Adapting to other hypervisors
 

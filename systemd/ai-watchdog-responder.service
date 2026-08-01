@@ -1,0 +1,21 @@
+[Unit]
+Description=homelab-ai-watchdog responder: Telegram command loop (v2 "hands")
+Wants=network-online.target time-sync.target
+After=network-online.target time-sync.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/homelab-ai-watchdog
+ExecStart=/opt/homelab-ai-watchdog/.venv/bin/python responder.py config.yaml
+User=aiwatch
+Group=aiwatch
+Restart=on-failure
+RestartSec=10
+EnvironmentFile=-/etc/ai-watchdog.env
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=-/opt/homelab-ai-watchdog/state
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
