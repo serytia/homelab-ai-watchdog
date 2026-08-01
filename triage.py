@@ -1,14 +1,24 @@
-"""Ask Claude whether anything in the snapshot is abnormal. Structured output, JSON guaranteed."""
+"""Ask a model whether anything in the snapshot is abnormal. Structured output, JSON guaranteed.
 
+Two providers: "anthropic" (default, Claude via the SDK) and "openai-compat"
+(any OpenAI-style /v1/chat/completions server — Ollama, vLLM, llama.cpp — for
+the zero-cloud crowd). Both enforce FINDINGS_SCHEMA server-side.
+"""
+
+import functools
 import json
 import logging
 
 import anthropic
+import requests
 
 log = logging.getLogger("watchdog.triage")
 
 # Guard against huge clusters blowing past the model's context window.
 MAX_PAYLOAD_CHARS = 300_000
+
+# Local models are slow — an 8B on CPU can chew minutes on a big snapshot.
+OPENAI_COMPAT_TIMEOUT_S = 120
 
 # The schema is enforced server-side (structured outputs), so the response is
 # always valid JSON matching this shape — no fragile parsing.
@@ -72,7 +82,7 @@ class TriageError(Exception):
     pass
 
 
-def _call(client, model, system, payload_text, max_tokens=2000):
+def _call_anthropic(client, model, system, payload_text, max_tokens=2000):
     response = client.messages.create(
         model=model,
         max_tokens=max_tokens,
@@ -92,9 +102,74 @@ def _call(client, model, system, payload_text, max_tokens=2000):
     return json.loads(text)["findings"]
 
 
+def _call_openai_compat(base_url, model, system, payload_text, max_tokens=2000):
+    # OpenAI-style chat/completions, the dialect Ollama serves on /v1. Ollama
+    # unwraps json_schema.schema into its native `format` field and constrains
+    # sampling to it — the same JSON guarantee as Anthropic's structured
+    # outputs. `name`/`strict` are ignored by Ollama but expected by other
+    # OpenAI-compatible servers, so keep the full standard wrapper.
+    body = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": payload_text},
+        ],
+        "max_tokens": max_tokens,
+        "temperature": 0,
+        "stream": False,
+        "response_format": {
+            "type": "json_schema",
+            "json_schema": {"name": "findings", "schema": FINDINGS_SCHEMA, "strict": True},
+        },
+    }
+    try:
+        resp = requests.post(f"{base_url.rstrip('/')}/chat/completions",
+                             json=body, timeout=OPENAI_COMPAT_TIMEOUT_S)
+        resp.raise_for_status()
+        data = resp.json()
+    except requests.RequestException as exc:
+        # Wrap into TriageError so callers (deep pass included) need only one
+        # provider-agnostic failure type.
+        raise TriageError(f"local model call failed: {exc}") from exc
+
+    try:
+        choice = data["choices"][0]
+    except (KeyError, IndexError, TypeError) as exc:
+        raise TriageError(f"malformed chat/completions response: {str(data)[:500]}") from exc
+    if choice.get("finish_reason") == "length":
+        raise TriageError("triage output truncated (max_tokens hit)")
+    text = (choice.get("message") or {}).get("content") or ""
+    # Reasoning models (qwen3 & co) may prepend a <think> block; the grammar
+    # constraint applies to the final answer, but strip defensively.
+    if "</think>" in text:
+        text = text.split("</think>", 1)[1]
+    try:
+        return json.loads(text)["findings"]
+    except (json.JSONDecodeError, KeyError, TypeError) as exc:
+        raise TriageError(f"local model returned non-conforming JSON: {exc}") from exc
+
+
+def _make_call(cfg):
+    """Bind the configured provider into a call(model, system, payload, max_tokens) function."""
+    provider = cfg.get("provider", "anthropic")
+    if provider == "anthropic":
+        client = anthropic.Anthropic(api_key=cfg.get("api_key") or None)
+        return functools.partial(_call_anthropic, client)
+    if provider == "openai-compat":
+        base_url = cfg.get("base_url", "http://localhost:11434/v1")
+        return functools.partial(_call_openai_compat, base_url)
+    raise TriageError(f"unknown triage.provider: {provider!r}")
+
+
 def triage(cfg, snapshot, previous=None):
     """Return a list of findings dicts (possibly empty)."""
-    client = anthropic.Anthropic(api_key=cfg.get("api_key") or None)
+    call = _make_call(cfg)
+    # The Haiku default only makes sense for the Anthropic provider; sending it
+    # to a local server would 404 with a confusing message, so fail loudly.
+    model = cfg.get("model") or ("claude-haiku-4-5"
+                                 if cfg.get("provider", "anthropic") == "anthropic" else None)
+    if not model:
+        raise TriageError("triage.model is required for the openai-compat provider")
 
     payload = {"current": snapshot}
     if previous:
@@ -106,17 +181,18 @@ def triage(cfg, snapshot, previous=None):
         if len(payload_text) > MAX_PAYLOAD_CHARS:
             raise TriageError(f"snapshot too large for triage ({len(payload_text)} chars)")
 
-    findings = _call(client, cfg.get("model", "claude-haiku-4-5"), SYSTEM_PROMPT, payload_text)
+    findings = call(model, SYSTEM_PROMPT, payload_text)
 
     # Optional second pass: cheap eyes found something, smart brain diagnoses it.
     # The deep pass may only ENRICH findings (detail, suggested_action) — it can
     # never drop, downgrade or add alerts, so a bad second pass costs nothing.
+    # It goes through the same provider as the first pass.
     deep_model = cfg.get("deep_model")
     if findings and deep_model:
         deep_payload = json.dumps({"findings": findings, "snapshot": snapshot},
                                   separators=(",", ":"))
         try:
-            deep = _call(client, deep_model, DEEP_PROMPT, deep_payload, max_tokens=3000)
+            deep = call(deep_model, DEEP_PROMPT, deep_payload, max_tokens=3000)
             # Match enrichments by stable id, never by position: a reordered
             # deep response must not cross-wire details between findings.
             by_id = {d.get("id"): d for d in deep}

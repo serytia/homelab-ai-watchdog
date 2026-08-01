@@ -9,10 +9,12 @@ notifier fails, the run exits non-zero and the same findings regenerate on
 the next run instead of being silently lost.
 """
 
+import difflib
 import hashlib
 import json
 import logging
 import os
+import re
 import sys
 import time
 from pathlib import Path
@@ -34,6 +36,11 @@ ERROR_COOLDOWN_S = 24 * 3600
 # `renotify_after_hours` in config.yaml.
 DEFAULT_RENOTIFY_HOURS = 24
 REPORTED_PRUNE_S = 30 * 24 * 3600
+# A drifting model id ("apt-update-failures" -> "apt-get-failures-persist")
+# must still count as the same ongoing issue. That very pair scores 0.65 on
+# SequenceMatcher, so 0.7 would reject it; distinct issues stay well below
+# (worst observed ~0.50, e.g. "vm104-backup-failed" vs "vm104-rootfs-full").
+FUZZY_MATCH_CUTOFF = 0.6
 
 
 def load_config(path):
@@ -105,8 +112,37 @@ def save_reported(path, reported):
 
 def finding_key(f):
     # The model provides a stable id per underlying issue; fall back to the
-    # title for robustness if it ever omits one.
-    return f.get("id") or f.get("title", "untitled")
+    # title for robustness if it ever omits one. Normalize so cosmetic
+    # variants ("APT Update Failures" vs "apt-update-failures") collapse
+    # into one key.
+    raw = f.get("id") or f.get("title") or "untitled"
+    key = re.sub(r"[^a-z0-9]+", "-", raw.lower()).strip("-")
+    return key or "untitled"
+
+
+def resolve_key(key, reported, severity="warning"):
+    """Map a finding key onto an already-reported one when they are close enough.
+
+    Model-generated ids drift between runs despite the stable-id prompt. An
+    exact miss falls back to fuzzy matching so a rephrased id doesn't re-page
+    for the same ongoing issue. Two hard limits, because swallowing a genuine
+    finding is a silent failure while an extra alert is only noise:
+      - digit runs (vmids, task ids) are identity: differing numbers never merge;
+      - critical findings never fuzzy-match. Nearby ids can mean opposite
+        things ("disk-full" vs "disk-slow" scores 0.67), and delaying a
+        critical alert by a cooldown is not a trade worth making.
+    """
+    if key in reported:
+        return key
+    if severity == "critical":
+        return key
+    digits = re.findall(r"\d+", key)
+    candidates = [k for k in reported if re.findall(r"\d+", k) == digits]
+    close = difflib.get_close_matches(key, candidates, n=1, cutoff=FUZZY_MATCH_CUTOFF)
+    if close:
+        log.info("finding id %r fuzzy-matched onto reported %r", key, close[0])
+        return close[0]
+    return key
 
 
 def should_notify_error(path, exc):
@@ -177,7 +213,11 @@ def main():
     reported = load_reported(reported_path)
     renotify_s = float(cfg.get("renotify_after_hours", DEFAULT_RENOTIFY_HOURS)) * 3600
     now = time.time()
-    fresh = [f for f in to_report if now - reported.get(finding_key(f), 0) >= renotify_s]
+    # Resolve each finding onto an existing reported key first, so a drifted
+    # id inherits the original key's cooldown instead of re-paging.
+    keyed = [(resolve_key(finding_key(f), reported, f.get("severity", "warning")), f)
+             for f in to_report]
+    fresh = [(k, f) for k, f in keyed if now - reported.get(k, 0) >= renotify_s]
 
     if not fresh:
         log.info("%d finding(s) present but all notified recently — staying quiet",
@@ -186,7 +226,7 @@ def main():
         return
 
     source = cfg["proxmox"].get("host", "homelab")
-    text = notifiers.format_report(fresh, source=source)
+    text = notifiers.format_report([f for _, f in fresh], source=source)
     sent = notifiers.dispatch(cfg["notifiers"], text)
     if sent == 0:
         # Do NOT advance state and do NOT mark findings as reported: the same
@@ -194,8 +234,8 @@ def main():
         log.error("alert NOT delivered — state not advanced, will retry next run")
         sys.exit(1)
 
-    for f in fresh:
-        reported[finding_key(f)] = now
+    for key, _ in fresh:
+        reported[key] = now
     save_reported(reported_path, reported)
     _save_or_log(state_file, snapshot)
 

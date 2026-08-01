@@ -17,6 +17,11 @@ triage:
                               # runs a 2nd diagnosis pass only when findings exist
   api_key: ""                 # prefer ANTHROPIC_API_KEY in the environment
   notify_min_severity: "warning"   # info | warning | critical
+  # Zero-cloud mode (see README): triage on a local model, nothing leaves
+  # your network. deep_model works here too (a bigger local model).
+  # provider: "openai-compat"              # default: "anthropic"
+  # base_url: "http://localhost:11434/v1"  # Ollama or any OpenAI-style server
+  # model: "qwen3:8b"                      # required with openai-compat
 
 # If the watchdog itself fails (API down, Proxmox unreachable), send the error
 # through the notifiers instead of failing silently.
