@@ -156,11 +156,22 @@ for the second diagnosis pass). The JSON contract is unchanged: Ollama enforces
 the findings schema through its structured-outputs grammar, exactly like the
 Anthropic API does server-side.
 
-Two honest caveats:
+Measured on a real lab snapshot (1 node, 20 tasks) — `qwen3:8b` on an RTX 2060
+vs `claude-haiku-4-5`, same prompt, same data:
 
-- **An 8B model triages less finely than Haiku.** Expect more missed trends and
-  the occasional false alarm. Run it alongside the cloud provider on your own
-  lab for a few days before you trust it alone.
+| | findings | latency | severity | suggested commands |
+|---|---|---|---|---|
+| Haiku | 2/2 real issues | **7 s** | warning + critical | valid |
+| qwen3:8b local | 2/2 real issues | **71 s** | both marked critical | one invalid (`qm list <vmid>`) |
+
+So: the local model **found the same real problems** — the hard part — but
+inflates severity and hallucinates command syntax. On a 15-minute timer, 71 s
+is irrelevant. Two honest caveats:
+
+- **An 8B model triages less finely than Haiku.** Severity inflation defeats
+  `notify_min_severity` filtering, and suggested commands need reading before
+  running (they always did — see SECURITY.md). Expect more missed trends too.
+  Run it alongside the cloud provider on your own lab before trusting it alone.
 - **Raise the context window.** Ollama defaults to 4096 tokens and cuts longer
   prompts without a client-side error — a big snapshot would be silently
   amputated. Start the server with e.g. `OLLAMA_CONTEXT_LENGTH=16384 ollama serve`
