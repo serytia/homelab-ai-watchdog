@@ -132,8 +132,40 @@ Cron works too: `*/15 * * * * cd /opt/homelab-ai-watchdog && .venv/bin/python wa
 3. **Cap the API spend** in the Anthropic console.
 4. **Your infra snapshot goes to an API.** Node names, VM names, storage usage,
    task logs — no passwords, no file contents, but metadata. If that crosses a
-   line for you, the architecture points the same script at a local model
-   (see Roadmap).
+   line for you, point the same script at a local model — see
+   [Zero-cloud mode](#zero-cloud-mode-ollama) below.
+
+## Zero-cloud mode (Ollama)
+
+Guardrail 4 bothers you? Run triage on a local model instead — nothing leaves
+your network, and the API bill drops to zero:
+
+```bash
+ollama pull qwen3:8b
+```
+
+```yaml
+triage:
+  provider: "openai-compat"
+  base_url: "http://localhost:11434/v1"   # any OpenAI-compatible server works
+  model: "qwen3:8b"
+```
+
+No API key needed. `deep_model` works here too (set it to a bigger local model
+for the second diagnosis pass). The JSON contract is unchanged: Ollama enforces
+the findings schema through its structured-outputs grammar, exactly like the
+Anthropic API does server-side.
+
+Two honest caveats:
+
+- **An 8B model triages less finely than Haiku.** Expect more missed trends and
+  the occasional false alarm. Run it alongside the cloud provider on your own
+  lab for a few days before you trust it alone.
+- **Raise the context window.** Ollama defaults to 4096 tokens and cuts longer
+  prompts without a client-side error — a big snapshot would be silently
+  amputated. Start the server with e.g. `OLLAMA_CONTEXT_LENGTH=16384 ollama serve`
+  (or set `num_ctx` in a Modelfile) and check the server log for truncation
+  warnings on the first runs.
 
 ## v2 — giving it hands (optional, read this twice)
 
@@ -179,7 +211,8 @@ same triage + notify pipeline.
 
 - **v2 — give it hands**: reply to the bot to run whitelisted, reversible actions
   (Telegram first; Slack/Teams/Discord interactivity needs real bot infra).
-- Local model support (Ollama) for the zero-cloud crowd.
+- ~~Local model support (Ollama) for the zero-cloud crowd.~~ Shipped — see
+  [Zero-cloud mode](#zero-cloud-mode-ollama).
 - Home Assistant / generic JSON collector.
 
 ## License
