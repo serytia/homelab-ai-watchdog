@@ -120,21 +120,29 @@ def finding_key(f):
     return key or "untitled"
 
 
-def resolve_key(key, reported):
+def resolve_key(key, reported, severity="warning"):
     """Map a finding key onto an already-reported one when they are close enough.
 
     Model-generated ids drift between runs despite the stable-id prompt. An
     exact miss falls back to fuzzy matching so a rephrased id doesn't re-page
-    for the same ongoing issue. Digit runs (vmids, task ids) are identity:
-    keys whose numbers differ are never merged, because swallowing a genuinely
-    new finding would be a silent failure while an extra alert is only noise.
+    for the same ongoing issue. Two hard limits, because swallowing a genuine
+    finding is a silent failure while an extra alert is only noise:
+      - digit runs (vmids, task ids) are identity: differing numbers never merge;
+      - critical findings never fuzzy-match. Nearby ids can mean opposite
+        things ("disk-full" vs "disk-slow" scores 0.67), and delaying a
+        critical alert by a cooldown is not a trade worth making.
     """
     if key in reported:
+        return key
+    if severity == "critical":
         return key
     digits = re.findall(r"\d+", key)
     candidates = [k for k in reported if re.findall(r"\d+", k) == digits]
     close = difflib.get_close_matches(key, candidates, n=1, cutoff=FUZZY_MATCH_CUTOFF)
-    return close[0] if close else key
+    if close:
+        log.info("finding id %r fuzzy-matched onto reported %r", key, close[0])
+        return close[0]
+    return key
 
 
 def should_notify_error(path, exc):
@@ -207,7 +215,8 @@ def main():
     now = time.time()
     # Resolve each finding onto an existing reported key first, so a drifted
     # id inherits the original key's cooldown instead of re-paging.
-    keyed = [(resolve_key(finding_key(f), reported), f) for f in to_report]
+    keyed = [(resolve_key(finding_key(f), reported, f.get("severity", "warning")), f)
+             for f in to_report]
     fresh = [(k, f) for k, f in keyed if now - reported.get(k, 0) >= renotify_s]
 
     if not fresh:

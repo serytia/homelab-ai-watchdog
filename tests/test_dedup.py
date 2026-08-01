@@ -94,5 +94,20 @@ class CooldownIntegrationTest(unittest.TestCase):
         self.assertGreaterEqual(NOW - reported[key], renotify_s)  # -> notifies
 
 
+class CriticalNeverFuzzyTest(unittest.TestCase):
+    """A critical finding must never inherit a lookalike's cooldown."""
+
+    def test_critical_keeps_its_own_key(self):
+        reported = {"disk-full": NOW}
+        self.assertEqual(
+            watchdog.resolve_key("disk-slow", reported, "critical"), "disk-slow")
+
+    def test_warning_still_fuzzy_matches(self):
+        reported = {"apt-update-failures": NOW}
+        self.assertEqual(
+            watchdog.resolve_key("apt-get-failures-persist", reported, "warning"),
+            "apt-update-failures")
+
+
 if __name__ == "__main__":
     unittest.main()
