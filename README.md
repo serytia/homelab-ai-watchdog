@@ -166,7 +166,16 @@ vs `claude-haiku-4-5`, same prompt, same data:
 
 So: the local model **found the same real problems** — the hard part — but
 inflates severity and hallucinates command syntax. On a 15-minute timer, 71 s
-is irrelevant. Two honest caveats:
+is irrelevant.
+
+We also tried fixing the inflation with explicit severity anchors in the prompt.
+It works, and it overshoots: the local model swung to marking *everything*
+`warning`, and the same anchors dragged Haiku down with it (a failing backup
+demoted from `critical` to `warning`). Anchors are therefore **not** shipped —
+they trade one miscalibration for another. Treat severity as a hint, not a
+gate, and keep `notify_min_severity` at `warning`.
+
+Two honest caveats:
 
 - **An 8B model triages less finely than Haiku.** Severity inflation defeats
   `notify_min_severity` filtering, and suggested commands need reading before
