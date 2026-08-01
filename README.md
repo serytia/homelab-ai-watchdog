@@ -90,11 +90,12 @@ Enable any combination in `config.yaml` — the report goes to all of them.
 
 #### Teams: the Workflows dance (2026 edition)
 
-Microsoft retired classic Office 365 connector webhooks (fully disabled since
-May 2026). The supported path:
+Microsoft retired classic Office 365 connector webhooks — disabled in a rollout
+between **May 18 and 22, 2026**. The supported path:
 
-1. In the Teams channel: ⋯ → **Workflows** → search template
-   **"Post to a channel when a webhook request is received"**.
+1. In the Teams channel: ⋯ → **Workflows** → search the template
+   **"Send webhook alerts to a channel"** (older docs call it "Post to a channel
+   when a webhook request is received" — same trigger).
 2. Create it, pick the team + channel, and copy the generated **HTTP URL**.
 3. Paste it as `workflow_url` in `config.yaml`.
 
@@ -163,6 +164,7 @@ vs `claude-haiku-4-5`, same prompt, same data:
 |---|---|---|---|---|
 | Haiku | 2/2 real issues | **7 s** | warning + critical | valid |
 | qwen3:8b local | 2/2 real issues | **71 s** | both marked critical | one invalid (`qm list <vmid>`) |
+| qwen3:14b local | 2/2 real issues | **56 s** | both marked critical | valid |
 
 So: the local model **found the same real problems** — the hard part — but
 inflates severity and hallucinates command syntax. On a 15-minute timer, 71 s
