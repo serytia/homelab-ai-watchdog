@@ -9,6 +9,9 @@ matters**. No green dashboards, no 3 a.m. threshold pages — a diagnosis, not a
 Works with **Telegram, Discord, Slack and Microsoft Teams** (one webhook URL each,
 several at once if you like).
 
+▶️ **[5-minute video walkthrough](https://youtu.be/efV-0Q0x0h4)** — build it from
+zero to first real alert.
+
 ```
 ┌─────────┐   API (read-only)  ┌──────────┐   snapshot   ┌────────┐   findings   ┌──────────────┐
 │ Proxmox │ ─────────────────► │ watchdog │ ───────────► │ Claude │ ───────────► │ your chat app│
