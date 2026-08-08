@@ -356,8 +356,8 @@ class Responder:
     def run(self):
         offset = self.drain_backlog(self.load_offset())
         conflict_streak = 0
-        log.info("responder up (chat %s, %d allowed guests, actions %s)",
-                 self.chat_id, len(self.allowed_vmids),
+        log.info("responder up (chat ***%s, %d allowed guests, actions %s)",
+                 self.chat_id[-3:], len(self.allowed_vmids),
                  "ON" if self.cfg["responder"].get("action_token_value") else "read-only")
         while True:
             try:
